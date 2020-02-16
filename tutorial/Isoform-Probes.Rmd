@@ -1,0 +1,92 @@
+---
+title: "Isoform Probes Design"
+author: "X. Steve Niu"
+output: html_notebook
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+*** 
+### 1. We will use two of the isoforms of human CD45 gene: CD45RO ENST00000348564 and CD45RA ENST00000442510 as an example. 
+We get the isoform sequences and extracted all possible 45bp length probes.
+```{r setup,echo=TRUE,results='hide'}
+library(FISHprobe)
+ptprc = CreateProbeObject("PTPRC")
+ptprc = TissueExpr(ptprc)
+PlotTissueExpr(ptprc)
+ptprc = GetSequence(ptprc, transcript_ids = c("ENST00000348564","ENST00000442510"))
+ptprc = ExtractProbes(ptprc, probe_length = 45)
+```
+*** 
+### 2. We use the *DiffProbes* function to find the differential and shared exon sequences for CD45RO and CD45RA.
+This will create a *DiffProbe* object which will contain either differential or shared exon sequences. 
+```{r diff,echo=TRUE,results='hide'}
+cd45ro_diff = DiffProbes(ptprc, transcripts_selected = "ENST00000348564", transcripts_to_compare = "ENST00000442510", probe_length = 45)
+cd45ro_share = DiffProbes(ptprc, transcripts_selected = "ENST00000348564", transcripts_to_compare = "ENST00000442510", probe_length = 45,find_shared = TRUE)
+cd45ra_diff = DiffProbes(ptprc, transcripts_selected = "ENST00000442510", transcripts_to_compare = "ENST00000348564", probe_length = 45)
+```
+*** 
+### 3. Next we use the *CalcJunction* and *DiffJunction* functions to find the differential and shared exon-exon sequences for CD45RO and CD45RA.
+```{r diff-junction,echo=TRUE,results='hide'}
+cd45_junction = CalcJunction(ptprc)
+cd45_junction = DiffJunction(cd45_junction,transcripts_selected = "ENST00000348564",transcripts_to_compare = "ENST00000442510")
+cd45_diff_junction = FilterProbes(cd45_junction,filter_names = "DiffJunction",equal_to = "Differential",do.filter = T)
+cd45ro_share_junction = FilterProbes(cd45_junction,filter_names = "DiffJunction",equal_to = "Shared",do.filter = T)
+```
+*** 
+### 4. We then split the 45bp probes targeting CD45RA into two parts probe A and B with varying length between 18-26bp using *SplitProbes* function,  similar to the SNAIL probes in [STARmap](https://science.sciencemag.org/content/361/6400/eaat5691).
+We follow the similar pipeline for off-target filtering as in the *Target-Probes.Rmd* tutorial. 
+```{r split,echo=TRUE,fig.height=2,fig.width=6}
+cd45ra_diff_split = SplitProbes(cd45ra_diff,min_length = 16,nick_length = 1)
+cd45ra_diff_split = GenerateProbes(cd45ra_diff_split)
+cd45ra_diff_split = CalcGC(cd45ra_diff_split)
+cd45ra_diff_split = CalcConsecutive(cd45ra_diff_split)
+cd45ra_diff_split = FilterProbes(cd45ra_diff_split,filter_names = "Consecutive",max = 0.99,do.filter = F,reverse_select = T)
+cd45ra_diff_split = FilterPairs(cd45ra_diff_split,filter_name = "Consecutive_-Inf_0.99")
+cd45ra_diff_split = FilterProbes(cd45ra_diff_split,filter_names = "GC",min = 0.45,max = 0.65,do.filter = F)
+cd45ra_diff_split = FilterPairs(cd45ra_diff_split,filter_name = "GC_0.55_0.65")
+cd45ra_diff_split = CalcRepMask(cd45ra_diff_split)
+cd45ra_diff_split = BLASTProbes(cd45ra_diff_split) 
+cd45ra_diff_split = FilterBLAST(cd45ra_diff_split, alignment_length = 10)
+cd45ra_diff_split = OffTargetExpr(cd45ra_diff_split)
+cd45ra_diff_split = StashProbes(cd45ra_diff_split, slot = "Target")
+```
+*** 
+### 5. Based on the off-target effects we filter the probe pairs using *FilterPairs* function.
+```{r split blast, echo=TRUE, fig.height=2, fig.width=6}
+cd45ra_diff_split_filtered = FilterProbes(cd45ra_diff_split,filter_names = "Off_Targets_Expr",max = 10,do.filter = F)
+cd45ra_diff_split_filtered = FilterPairs(cd45ra_diff_split_filtered,filter_name = "Off_Targets_Expr_-Inf_10")
+cd45ra_diff_split_filtered = Calc2ndStruct(cd45ra_diff_split_filtered,method = "nupack")
+cd45ra_diff_split_filtered = CalcExon(cd45ra_diff_split_filtered)
+cd45ra_diff_split_filtered = CalcTm(cd45ra_diff_split_filtered)
+cd45ra_diff_split_filtered = CalcDuplex(cd45ra_diff_split_filtered)
+```
+*** 
+### 6. The two A/B probes may have very different GC content and melting temperature Tm. We use *DiffFeature* function to calculate the differences between two probe sets.
+```{r split diff,echo=TRUE}
+cd45ra_diff_split_filtered = DiffFeature(cd45ra_diff_split_filtered,feature = "Tm")
+cd45ra_diff_split_filtered = DiffFeature(cd45ra_diff_split_filtered,feature = "GC")
+cd45ra_diff_split_filtered = DiffFeature(cd45ra_diff_split_filtered,feature = "Equilibrium_Percent")
+```
+
+```{r split diff1,fig.height=2,fig.width=6}
+PlotFeatures(cd45ra_diff_split_filtered,features = c("Part_GC_Diff","Part_Tm_Diff","Part_Equilibrium_Percent_Diff"),plot_type = "bar") 
+```
+*** 
+### 7. We further filtered the probe pairs, and selected the non-overlapping probe pairs while minimizing Tm differences between A/B probes.
+```{r split filter,echo=TRUE}
+cd45ra_diff_split_filtered = FilterProbes(cd45ra_diff_split_filtered,filter_names = c("BLAST_Hits","Min_Free_Energy","Equilibrium_Percent","Off_Targets_Expr"),min = c(0,-0.01,0.3,0), max = c(10,0,1,5),do.filter = F)
+cd45ra_diff_split_filtered = FilterPairs(cd45ra_diff_split_filtered,filter_name = "BLAST_Hits_0_10 & Min_Free_Energy_-0.01_0 & Equilibrium_Percent_0.3_1 & Off_Targets_Expr_0_5")
+cd45ra_diff_split_filtered = PairSelect(cd45ra_diff_split_filtered,n_space = -10,iterative = T,order_by_feature = "Part_Tm_Diff",feature_target = 0)
+```
+*** 
+### 8. We can generate a genome browser for all the remaining 44 probes.
+```{r gb, echo=TRUE}
+GenerateProbeTracks(cd45ra_diff_split, file_name = "CD45RA_Diff_Exon",sort = F)
+```
+*** 
+### 9. (optional) We can also repeat similar pipeline for the shared sequences and junctions, as well as differential junctions between CD45RO and CD45RA, and save them.
+```{r others 1, echo=TRUE}
+SaveProbes(cd45ra_diff_split_filtered, suffix = "Diff_Exon")
+```

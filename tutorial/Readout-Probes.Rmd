@@ -1,0 +1,34 @@
+---
+title: "Readout Probe Design"
+author: "X. Steve Niu"
+output: html_notebook
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+*** 
+### 1. Setup FISHprobe Object Using Pre-Computed Readout Probes and Codebook
+For this tutorial, we used mouse gene *Lyz1* and *Lyz2* as an example.
+```{r create,echo=TRUE}
+library(FISHprobe)
+test = CreateProbeObject(gene_names = c("Lyz1","Lyz2"),specie_type = "mouse",preload_readout = T)
+test = TissueExpr(test)
+test = SelectTranscript(test)
+test = GetSequence(test)
+test = ExtractProbes(test,probe_length =  25)
+test = StashProbes(test, slot = "Target") # Stash the probe sets
+test = FilterProbes(test,filter_names = "GC",min = 0.5,max = 0.6,do.filter = T)
+test = GenerateProbes(test)
+test
+```
+*** 
+### 2. Create Readout Probes and Flanks
+We can generate the redout probes (or adding additional flanking nucleotides), assign transcript/gene to a fluorescent channel and lastly generate the final probe set.
+```{r expression,echo=TRUE,fig.width=6, fig.height=6,dpi=600}
+test = GenerateReadout(test, flank_5end ="CCCCCC", flank_3end = "GGGGGG", concat = "TTTT") # adding forward and reverse flank and concatenated nucleotides
+channel_list = list("488" = Transcripts(test)[1], "561" = Transcripts(test)[2])
+test = AssignReadout(test, channel_transcript = channel_list)
+test = GenerateFinalProbes(test,concat = "T")
+SaveProbes(test)
+```

@@ -1,0 +1,200 @@
+---
+title: "Target Probe Design"
+author: "X. Steve Niu"
+output: html_notebook
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+*** 
+### 1. Setup FISHprobe Object
+For this tutorial, we used mouse gene *Lyz1* and *Lyz2* as an example.
+```{r create,echo=TRUE}
+library(FISHprobe)
+test = CreateProbeObject(gene_names = c("Lyz1","Lyz2"),specie_type = "mouse")
+test
+```
+*** 
+### 2. Check Tissue Expression 
+We check tissue expressions of the annotated transcriptional isoforms. Actually *Lyz1* and *Lyz2* are both lysozyme gene duplication products in Mouse. There is only one copy in Human namely *LYZ*. Despite of this we saw that *Lyz1* is more expressed in large intestine while *Lyz2* is more expressed in macrophages.
+```{r expression,echo=TRUE,fig.width=6, fig.height=6,dpi=600}
+test = TissueExpr(test)
+PlotTissueExpr(test)
+```
+
+We select the most expressed isoforms in average all tissues. Then extract all 25nt probes that have various GC content between 30%-70% or 45%-65% for each gene. And we plot the GC filtering results as binary heatmaps. Note we stashed the probe sets in order to repeat the filtering steps and select the desired filtering parameters. 
+```{r extract,echo=TRUE, fig.height=3.5,fig.width=5}
+test = SelectTranscript(test)
+test = GetSequence(test)
+test = ExtractProbes(test,probe_length = 25)
+test = StashProbes(test, slot = "Target") # Stash the probe sets
+test = FilterProbes(test,filter_names = "GC",min = 0.3,max = 0.7,do.filter = F)
+test = FilterProbes(test,filter_names = "GC",min = 0.45,max = 0.65,do.filter = F)
+FilterHeatmap(test)
+```
+
+We can examine the barplot of the number of probes survived after each filtering conditions.
+```{r extract_plot,echo=TRUE,fig.height=3,fig.width=5}
+FilterBarplot(test)
+``` 
+*** 
+### 3. BLAST Off-target
+We can blast the probes against the whole transcriptome, and filter out the off-target gene hits with 11nt alignment to the probe and get the off-target hits tissue expressions (large intestine).
+```{r blast,echo=TRUE,results='hide'}
+test = BLASTProbes(test)
+test = FilterBLAST(test, alignment_length = 11)
+test = OffTargetExpr(test,tissue = "large intestine")
+test = StashProbes(test, slot = "Target") # Stash again with the off-target expreesion
+```
+*** 
+### 4. Select the Probes 
+We further select the probes with less than 5nt overlapping based on off-target expression(logTPM) and ideal GC content.
+```{r probes_select, warning=FALSE}
+test = SelectProbes(test, n_space = -5, TPM_cutoff = 15, order_by_feature = "GC", feature_target = 0.55, iterative = T)
+test
+```
+
+Because we get less than 20 probes for each gene, we reselect the probes by loosening the criteria to get more probes.
+```{r probes_select1, warning=FALSE}
+test = SelectProbes(test, n_space = -5, TPM_cutoff = 20, order_by_feature = "GC", feature_target = 0.55, iterative = T,recalculate = T)
+test
+```
+
+```{r probes_select2, warning=FALSE}
+test = SelectProbes(test, n_space = -10, TPM_cutoff = 20, order_by_feature = "GC", feature_target = 0.55, iterative = T,recalculate = T)
+test
+```
+
+We saw that the off-target expression gives a boost in the number of good probes. Let's further inspect how the off-target expression of *Lyz1* was creates.
+```{r tissue}
+lyz1 = SubsetProbes(test, gene_names = "Lyz1")
+lyz1
+```
+
+We first plotted the number of BLAST hits and the off-target expression level for the survival probes
+```{r lyz1,fig.width=5,fig.height=2}
+ListFeatures(lyz1)
+PlotFeatures(lyz1, features = c("BLAST_Hits","Off_Targets_Expr"),plot_type = "bar")
+```
+
+Let's see what genes accounted for most of off-target effects. In fact most of the off-target effects are caused by *Lyz2* which is a duplication of *Lyz1*.
+```{r lyz1 off-target}
+print(lyz1@probes$Target$ENSMUST00000092162[,c("Sequence","BLAST_Hits_Gene", "Off_Targets_Expr")])
+```
+
+Indeed the first miss alignment of *Lyz1* probe *AGCTCAGCATGAGAGCAATTATAAC* happened to be a completly (25nt) duplication of *Lyz2* gene from transcript position 177 to 201. Because of closed homology between two *Lyz* genes, it is unlikely that we can have enough probes that will discriminate between the two genes.
+```{r lyz1 off-target blast}
+print(lyz1@blast.data$Target$ENSMUST00000092162[["AGCTCAGCATGAGAGCAATTATAAC"]])
+```
+
+Therefore, we can design targeting probes of *Lyz1* with the possibility that it can also detect *Lyz2* aka lysozyme gene detection of *Lyz1/Lyz2*. We just need to reset the probes to the previously stashed version with *ResetProbes* function and excluding *Lyz2* off-targets using *genes_to_exclude* argument in *OffTargetExpr* function. Now we see that the above probe (probe #117) *AGCTCAGCATGAGAGCAATTATAAC* has no off-target of *Lyz2* and the off-target expression dropped from around 18 logTPM to 10 logTPM.
+```{r lyz1 remove lyz2}
+lyz1 = ResetProbes(lyz1)
+lyz1 = FilterBLAST(lyz1, alignment_length = 11)
+lyz1 = OffTargetExpr(lyz1,tissue = "large intestine",genes_to_exclude = "Lyz2")
+lyz1 = StashProbes(lyz1, slot = "Target")
+print(lyz1[["ENSMUST00000092162"]][177,c("Sequence","BLAST_Hits_Gene", "Off_Targets_Expr")])
+```
+
+We also get 7 more probes by doing so.
+```{r lyz1 selection,warning=FALSE}
+lyz1 = SelectProbes(lyz1, n_space = -5, TPM_cutoff = 20, order_by_feature = "GC", feature_target = 0.55, iterative = T)
+lyz1
+```
+
+Let's get some more probes.
+```{r lyz1 selection1,warning=FALSE}
+lyz1 = SelectProbes(lyz1, n_space = -10, TPM_cutoff = 20, order_by_feature = "GC", feature_target = 0.55, iterative = T,recalculate = T)
+lyz1
+```
+
+We excute the same procedures for *Lyz2* to exclude *Lyz1* off-target effects.
+```{r lyz2,warning=FALSE}
+lyz2 = SubsetProbes(test,gene_names = "Lyz2")
+lyz2 = ResetProbes(lyz2) 
+lyz2 = FilterBLAST(lyz2, alignment_length = 11)
+lyz2 = OffTargetExpr(lyz2,tissue = "large intestine",genes_to_exclude = "Lyz1")
+lyz2 = StashProbes(lyz2, slot = "Target")
+lyz2 = SelectProbes(lyz2, n_space = -10, TPM_cutoff = 20, order_by_feature = "GC", feature_target = 0.55, iterative = T)
+lyz2
+```
+*** 
+### 5. Merge Objects 
+We merge the *Lyz2* and *Lyz1* FISHprobe objects into one using *MergeProbes* function.
+```{r merge,warning=FALSE}
+lyz_merge = MergeProbes(list(lyz1,lyz2))
+lyz_merge
+```
+*** 
+### 6. Secondary Structure, Tm, Duplexing and Targeting Exons Calculation
+We can perform further filtering on probes based on Tm and secondary structures.
+```{r filter, results='hide',fig.height=2,fig.width=7}
+lyz_merge = GenerateProbes(lyz_merge)
+lyz_merge = CalcTm(lyz_merge)
+lyz_merge = Calc2ndStruct(lyz_merge, method = "nupack", pseudoknots = TRUE, Na_M = 0.39, formamide_percent = 50)
+lyz_merge = CalcDuplex(lyz_merge, Na_M = 0.39, formamide_percent = 50, probe_M = 2.5e-07, target_M = 2.5e-07)
+lyz_merge = CalcExon(lyz_merge)
+lyz_merge = FilterProbes(lyz_merge,filter_names = c("GC","Tm","Min_Free_Energy","Equilibrium_Percent"),max = c(0.6,70,0,1),min = c(0.5,50,0,0.2),do.filter = F)
+lyz_merge = FilterProbes(lyz_merge,filter_names = c("GC","Tm","Min_Free_Energy","Equilibrium_Percent"),max = c(0.65,75,0,1),min = c(0.45,45,-5,0.3),do.filter = F)
+lyz_merge = FilterProbes(lyz_merge,filter_names = c("GC","Tm","Min_Free_Energy","Equilibrium_Percent"),max = c(0.7,70,0,1),min = c(0.4,50,-10,0.5),do.filter = F)
+lyz_merge = FilterProbes(lyz_merge,filter_names = c("GC","Tm","Min_Free_Energy","Equilibrium_Percent"),max = c(0.7,75,0,1),min = c(0.4,45,-10,0.7),do.filter = F)
+FilterBarplot(lyz_merge)
+```
+
+Let's print out the number of probes survived after each filtering. 
+```{r filter-print, echo=TRUE}
+PrintFilter(lyz_merge) 
+```
+
+(Optional) We can check if any of the probes are within annotated/predicted repetitive mask regions. In this case we used the default AGAPS and AMB data base for masking regions. No probes were found to be within these repetitive regions.
+```{r rep_mask, echo=TRUE, fig.height= 4,fig.width=4}
+lyz_merge = CalcRepMask(lyz_merge)
+PlotFeatures(lyz_merge,features = "RepMask_Length")
+```
+
+(Optional) We can use grid search to get optimal number of probes. For example, we search for a combination of BLAST hits number and GC content that will give us 20 probes.
+```{r grid search, echo=TRUE}
+filter.list = list(BLAST_Hits = list(min = c(5,10)),GC = list(min = c(.3,.45), max = c(.7,.65)), Equilibrium_Percent = list(min = c(0.2,0.3)))
+print(GridSelect(lyz_merge,features_list = filter.list,target_number = 20))
+```
+*** 
+### 7. Final Selection and Genome Brower 
+We select the last filtering condition to filter the probes. And visualize the targeting probes with genome browser.
+```{r browser, warning=FALSE, results='hide'}
+lyz_merge = FilterProbes(lyz_merge,filter_names = c("GC","Tm","Min_Free_Energy"),max = c(0.7,75,0),min = c(0.4,45,-10),do.filter = T)
+GenerateProbeTracks(lyz_merge)
+```
+*** 
+### 8. (optional) Check Cross-hybridization 
+We can also check if the probes can cross-hybridize to each other.
+```{r blast probes cross-hybridize, results='hide'}
+# Create FASTA files for all target probes
+CreateFASTAFile(lyz_merge,filepath = "lyz_merge.fa",transcript_ids = "ENSMUST00000092162")
+# Check if can bind to each other
+bl.probe = CreateBLASTObject("lyz_merge.fa")
+# Save it to another object
+lyz_merge_blast = BLASTProbes(lyz_merge, blast_db = bl.probe,transcript_ids = "ENSMUST00000092162")
+lyz_merge_blast = FilterBLAST(lyz_merge_blast,transcript_ids = "ENSMUST00000092162", probe_mode = TRUE, alignment_length = 11,names_delim = ";",names_field = 1)
+```
+
+There are not too many probes that can significantly bind to each other.
+```{r blast probes print}
+data.use = apply(lyz_merge_blast@off.target.expr$Target$ENSMUST00000092162,2,as.character)
+print(data.frame(data.use))
+```
+*** 
+### 9. (optional) Check for Repetitive Sequence Mask
+We can also check if the probes align to repetitive sequences in the genome. Masked repeats in general are not a problem for transcript targeting probes.
+This requires to download the  [database](https://drive.google.com/drive/u/1/folders/1eB5tOZPeFbSw9hwrpMiaXLegpkmeTINP).
+```{r blast repeats, results='hide', eval=FALSE}
+test2 = BLASTProbes(test,repeat_mask = T)
+test2 = FilterBLAST(test2, parse = FALSE)
+print(head(test2@off.target.expr$Target$ENSMUST00000063084))
+```
+*** 
+### 10. Save Probe Set.
+```{r save}
+SaveProbes(lyz_merge)
+saveRDS(lyz_merge, "lyz_merge.rds")
+```

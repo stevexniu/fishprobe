@@ -1,0 +1,50 @@
+Package: FISHprobe
+Title: FISH Probe Design Tools
+Version: 0.4.1
+Authors@R: person("Steve X", "Niu", email = "xin2001@med.cornell.edu", role = c("aut", "cre"))
+Description: Probe sequence design tool for RNA Fluorescence In Situ Hybridization (RNA-FISH) experiments, such as high-throughput MERFIS, SeqFISH+ STARmap etc.
+Depends: R (>= 3.5.1)
+biocViews:
+Imports:
+    BiocManager,
+    Ringo,
+    biomaRt,
+    IRanges,
+    BiocGenerics,
+    stringr, seqinr,
+    D3GB,
+    cowplot,
+    TmCalculator,
+    stringi,
+    Hmisc,
+    pbapply,
+    pbmcapply,
+    future,
+    future.apply,
+    reshape2,
+    ggplot2,
+    LncFinder,
+    intervals,
+    Biostrings,
+    rBLAST,
+    BSgenome.Hsapiens.UCSC.hg38.masked,
+    BSgenome.Mmusculus.UCSC.mm10.masked,
+    GenomeInfoDb,
+    GenomeInfoDbData
+Remotes: stevexniu/rBLAST, stevexniu/BSgenome.Mmusculus.UCSC.mm10.masked
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Collate:
+    'utils.R'
+    'blast.R'
+    'data.R'
+    'expression.R'
+    'object.R'
+    'plot.R'
+    'probes.R'
+    'readout.R'
+RoxygenNote: 7.0.2
+Suggests:
+    knitr
+VignetteBuilder: knitr

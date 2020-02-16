@@ -1,0 +1,104 @@
+---
+title: "Target Probe Design"
+author: "X. Steve Niu"
+output: html_notebook
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+*** 
+### 1. Let's load FISHprobe package and use mouse gene *Tubb3*, *Cd3e* and *Vil1* as an example.
+```{r create, echo=TRUE}
+library(FISHprobe)
+test = CreateProbeObject(gene_names = c("TUBB3","CD3E","IL1B"),specie_type = "human")
+test
+```
+*** 
+### 2. Check tissue expression of the transcriptional isoforms.
+```{r expression, echo=TRUE, fig.width=8, fig.height=10,dpi=600}
+test = TissueExpr(test)
+PlotTissueExpr(test)
+```
+*** 
+### 3. Select the most expressed isoforms in average all tissues. Then extract all 25nt probes that have various GC content between 30%-70% or 45%-65% for each gene. Note we stashed the probe sets in order to repeat the filtering steps and select the desired filtering parameters.
+```{r extract, echo=TRUE,results='hide'}
+test = SelectTranscript(test)
+test = GetSequence(test)
+test = ExtractProbes(test,probe_length = 25)
+test = StashProbes(test, slot = "Target") # Stash the probe sets
+test = FilterProbes(test,filter_names = "GC",min = 0.3,max = 0.7,do.filter = F)
+test = FilterProbes(test,filter_names = "GC",min = 0.45,max = 0.65,do.filter = F)
+test = FilterProbes(test,filter_names = "GC",min = 0.4,max = 0.65,do.filter = F)
+test = FilterProbes(test,filter_names = "GC",min = 0.35,max = 0.70,do.filter = F)
+```
+
+We can plot the GC filtering results as binary heatmaps. 
+```{r extract-heatmap, echo=TRUE, fig.height=3,fig.width=5.5,dpi=600}
+FilterHeatmap(test)
+```
+
+We can examine the barplot of the number of probes survived after each filtering conditions.
+```{r extract_barplot,echo=TRUE,fig.height=2.5,fig.width=7,dpi=600}
+FilterBarplot(test)
+``` 
+
+We can also print out the number of probes after filtering.
+```{r extract_print}
+PrintFilter(test)
+``` 
+*** 
+### 4. BLAST the probes against the transcriptome, filter out the off-target gene hits with 11nt alignment to the probe and get the off-target hits tissue expressions, large intestine in this case.
+```{r blast, echo=TRUE}
+test = BLASTProbes(test)
+test = FilterBLAST(test, alignment_length = 11)
+test = OffTargetExpr(test,tissue = ListTissues(test,pattern = "Colon"))
+test = StashProbes(test, slot = "Target") # Stash again with the off-target expreesion 
+```
+*** 
+### 5. Select the probes with less than 5nt overlapping based on 15 off-target expression(logTPM) and ideal GC content of 55%.
+```{r select, echo=TRUE, warning=FALSE}
+test = SelectProbes(test, n_space = -5, TPM_cutoff = 15, order_by_feature = "GC", feature_target = 0.55, iterative = T)
+test
+```
+
+We can also try to not prioritize by GC content by setting *order_by_gc_cotent = FALSE*. Since we did *StashProbes* previously, we can re-select the probes from the stashed data by using *recalclate = TRUE*. And we get more probes.
+```{r select1, echo=TRUE, warning=FALSE}
+test = SelectProbes(test, n_space = -5, TPM_cutoff = 25, iterative = T, recalculate = T)
+test
+```
+
+We can also try different combinations of the overlapping length, off-target expression cutoff and GC content as well.
+```{r select2, echo=TRUE, warning=FALSE}
+test = SelectProbes(test, n_space = -10, TPM_cutoff = 15, order_by_feature = "GC", feature_target = 0.55, iterative = T,recalculate = T)
+test
+```
+*** 
+### 6. Further filter probes based on Tm and secondary structure to get more stringent probes. And we can visualize the filtering using heatmap or barplot as shown above.
+```{r filter, results='hide',fig.height=2,fig.width=7}
+test = GenerateProbes(test)
+test = CalcTm(test)
+test = Calc2ndStruct(test,method = "nupack")
+test = FilterProbes(test,filter_names = c("GC","Tm","Min_Free_Energy"),max = c(0.6,70,0),min = c(0.5,50,-5),do.filter = F)
+test = FilterProbes(test,filter_names = c("GC","Tm","Min_Free_Energy"),max = c(0.65,75,0),min = c(0.45,45,-5),do.filter = F)
+test = FilterProbes(test,filter_names = c("GC","Tm","Min_Free_Energy"),max = c(0.7,70,0),min = c(0.4,50,-10),do.filter = F)
+test = FilterProbes(test,filter_names = c("GC","Tm","Min_Free_Energy"),max = c(0.7,75,0),min = c(0.4,45,-10),do.filter = F)
+FilterBarplot(test)
+```
+
+Let's print out the number of probes survived after each filtering. 
+```{r filter-print, echo=TRUE}
+PrintFilter(test) 
+```
+*** 
+### 7. Visualize targeting probes with genome browser.
+```{r browser,results='hide',echo=TRUE}
+test = FilterProbes(test,filter_names = c("GC","Tm","Min_Free_Energy"),max = c(0.7,75,0),min = c(0.4,45,-10),do.filter = T)
+GenerateProbeTracks(test)
+```
+*** 
+### 8. Save probe set.
+```{r save, echo=TRUE}
+SaveProbes(test)
+saveRDS(test, "multigene.rds")
+```
