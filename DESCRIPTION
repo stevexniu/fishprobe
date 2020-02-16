@@ -27,8 +27,6 @@ Imports:
     intervals,
     Biostrings,
     rBLAST,
-    BSgenome.Mmusculus.UCSC.mm10,
-    Sgenome.Hsapiens.UCSC.hg38,
     BSgenome.Hsapiens.UCSC.hg38.masked,
     BSgenome.Mmusculus.UCSC.mm10.masked,
     GenomeInfoDb,
