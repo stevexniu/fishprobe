@@ -5,7 +5,7 @@ dist: trusty
 cache: packages
 sudo: false
 
-r: 3.6.2
+r: 3.5.1
 
 os:
   - osx
